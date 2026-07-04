@@ -604,16 +604,21 @@ class TabExtent(NamedTuple):
     tab_id: int
     x: CellRange
     y: CellRange = CellRange(0, 0)
+    close_button: CellRange | None = None
 
     def shifted(self, x: int = 0, y: int = 0) -> 'TabExtent':
         return TabExtent(
             self.tab_id,
             CellRange(self.x.start + x, self.x.end + x),
             CellRange(self.y.start + y, self.y.end + y),
+            None if self.close_button is None else CellRange(self.close_button.start + x, self.close_button.end + x),
         )
 
     def contains(self, x: int, y: int) -> bool:
         return self.x.start <= x <= self.x.end and self.y.start <= y <= self.y.end
+
+    def close_button_contains(self, x: int, y: int) -> bool:
+        return self.close_button is not None and self.close_button.start <= x <= self.close_button.end and self.y.start <= y <= self.y.end
 
 
 class TabBar:
@@ -871,8 +876,18 @@ class TabBar:
             s.cursor.bold, s.cursor.italic = self.active_font_style if tab.is_active else self.inactive_font_style
             before = s.cursor.x
             end = self.draw_func(self.draw_data, s, tab, before, max_tab_length, i + 1, tab is last_tab, ed)
+            close_button = None
+            if not ed.for_layout and tab.tab_id >= 0 and end - before >= 7:
+                close_x = max(before + 1, end - 2)
+                s.cursor.bg = as_rgb(self.draw_data.tab_bg(tab))
+                s.cursor.fg = as_rgb(self.draw_data.tab_fg(tab))
+                close_button = CellRange(close_x - 1, close_x)
+                s.cursor.x = close_x - 1
+                s.draw(' ')
+                s.draw('✘')
+                s.cursor.x = end
             s.cursor.bg = s.cursor.fg = 0
-            cell_ranges.append(TabExtent(tab_id=tab.tab_id, x=CellRange(before, end)))
+            cell_ranges.append(TabExtent(tab_id=tab.tab_id, x=CellRange(before, end), close_button=close_button))
             if not ed.for_layout and tab is not last_tab and s.cursor.x > s.columns - max_tab_lengths[i + 1]:
                 # Stop if there is no space for next tab
                 s.cursor.x = s.columns - 2
@@ -994,3 +1009,15 @@ class TabBar:
 
     def drag_axis_coordinate(self, x: int, y: int) -> int:
         return y if self.is_vertical else x
+
+    def close_button_tab_id_at(self, x: int, y: int) -> int:
+        if self.laid_out_once:
+            g = self.window_geometry
+            if not (g.left <= x < g.right and g.top <= y < g.bottom):
+                return 0
+            x = (x - g.left) // self.cell_width
+            y = (y - g.top) // self.cell_height
+            for te in self.tab_extents:
+                if te.close_button_contains(x, y):
+                    return te.tab_id
+        return 0
