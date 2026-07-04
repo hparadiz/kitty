@@ -8,6 +8,14 @@
 
 If you live in the terminal, *kitty* is made for **you**!
 
+This fork of kitty adds tab close buttons and a right-click tab actions menu:
+
++++
+<p align="center">
+  <img width="1199" height="171" alt="Tab close buttons and right-click tab actions menu" src="https://github.com/user-attachments/assets/7638189a-78da-421b-9398-e2baeaadecc4">
+</p>
++++
+
 See https://sw.kovidgoyal.net/kitty/[the kitty website].
 
 image:https://github.com/kovidgoyal/kitty/workflows/CI/badge.svg["Build status", link="https://github.com/kovidgoyal/kitty/actions?query=workflow%3ACI"]
