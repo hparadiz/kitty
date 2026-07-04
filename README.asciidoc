@@ -1,3 +1,9 @@
++++
+<p align="center">
+  <img src="logo/nekomimi-tail-terminal.png" alt="kitty" width="256">
+</p>
++++
+
 = kitty - the fast, feature-rich, cross-platform, GPU based terminal
 
 If you live in the terminal, *kitty* is made for **you**!
