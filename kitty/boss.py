@@ -2678,6 +2678,12 @@ class Boss:
             text = get_clipboard_string()
             if text:
                 w.paste_with_actions(text)
+            else:
+                # No text on the clipboard (e.g. an image was copied instead).
+                # Forward the raw key press to the child so apps with their
+                # own clipboard-aware paste handling (e.g. image paste) can
+                # still see it, instead of silently swallowing the shortcut.
+                w.send_key('super+v')
 
     def current_primary_selection(self) -> str:
         return get_primary_selection() if supports_primary_selection else ''

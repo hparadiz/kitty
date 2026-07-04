@@ -1522,10 +1522,9 @@ def create_linux_bundle_gunk(ddir: str, args: Options) -> None:
     if not skip_docs:
         copy_man_pages(ddir)
         copy_html_docs(ddir)
-    for (icdir, ext) in {'256x256': 'png', 'scalable': 'svg'}.items():
-        icdir = os.path.join(ddir, 'share', 'icons', 'hicolor', icdir, 'apps')
-        safe_makedirs(icdir)
-        shutil.copy2(f'logo/kitty.{ext}', icdir)
+    icdir = os.path.join(ddir, 'share', 'icons', 'hicolor', '256x256', 'apps')
+    safe_makedirs(icdir)
+    shutil.copy2('logo/kitty.png', icdir)
     deskdir = os.path.join(ddir, 'share', 'applications')
     safe_makedirs(deskdir)
     with open(os.path.join(deskdir, 'kitty.desktop'), 'w') as f:
