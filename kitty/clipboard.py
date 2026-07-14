@@ -110,6 +110,19 @@ class Clipboard:
         self.get_mime("text/plain", parts.append)
         return b''.join(parts).decode('utf-8', 'replace')
 
+    def get_text_or_media_data_url(self) -> str:
+        text = self.get_text()
+        if text:
+            return text
+        for mime in self.get_available_mime_types_for_paste():
+            if mime == 'text/plain':
+                continue
+            data = self.get_mime_data(mime)
+            if data:
+                import base64
+                return f'data:{mime};base64,{base64.standard_b64encode(data).decode("ascii")}'
+        return ''
+
     def get_mime(self, mime: str, output: Callable[[bytes], None]) -> None:
         if self.enabled:
             try:
@@ -166,6 +179,10 @@ def set_clipboard_string(x: str | bytes) -> None:
 
 def get_clipboard_string() -> str:
     return get_boss().clipboard.get_text()
+
+
+def get_clipboard_string_or_media_data_url() -> str:
+    return get_boss().clipboard.get_text_or_media_data_url()
 
 
 def set_primary_selection(x: str | bytes) -> None:
