@@ -1574,6 +1574,11 @@ class TabManager:  # {{{
         self.mark_tab_bar_dirty()
         return t
 
+    def new_tab_after_current_with_cwd(self) -> Tab:
+        t = self.active_tab
+        w = t.active_window_for_cwd if t is not None else None
+        return self.new_tab(cwd_from=CwdRequest(w) if w is not None else None, location='after')
+
     @update_tab_bar_visibility
     def remove(self, removed_tab: Tab) -> None:
         active_tab_before_removal = self.active_tab
@@ -1819,7 +1824,7 @@ class TabManager:  # {{{
             if is_left_release and not drag_started:
                 set_tab_being_dragged()  # clear potential drag from a press on a tab
             if self.recent_tab_bar_mouse_events.click_count(GLFW_MOUSE_BUTTON_LEFT) == 1:
-                self.new_tab()
+                self.new_tab_after_current_with_cwd()
                 self.recent_tab_bar_mouse_events.clear()
             return
         if drag_started:
@@ -1829,7 +1834,7 @@ class TabManager:  # {{{
             if is_left_release:
                 set_tab_being_dragged()  # clear potential drag from a press on a tab
             if self.recent_tab_bar_mouse_events.click_count(GLFW_MOUSE_BUTTON_LEFT) == 2:
-                self.new_tab()
+                self.new_tab_after_current_with_cwd()
                 self.recent_tab_bar_mouse_events.clear()
             return
         if button == GLFW_MOUSE_BUTTON_RIGHT:
@@ -1876,7 +1881,7 @@ class TabManager:  # {{{
             if target is None or ans is None:
                 return
             if ans == 'new_tab_after':
-                self.new_tab(location='after')
+                self.new_tab_after_current_with_cwd()
             elif ans == 'rename':
                 boss.set_tab_title()
             elif ans == 'close':
