@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from kitty.fast_data_types import LEFT_EDGE, Color, Region, Screen
 from kitty.options.utils import tab_title_wrap
-from kitty.tab_bar import CellRange, DrawData, ExtraData, TabBar, TabBarData, TabExtent, WindowDropTarget, as_rgb, powerline_symbols, truncate_line, wrap_title
+from kitty.tab_bar import CLOSE_BUTTON_WIDTH, CellRange, DrawData, ExtraData, TabBar, TabBarData, TabExtent, WindowDropTarget, as_rgb, powerline_symbols, truncate_line, wrap_title
 from kitty.utils import color_as_int
 
 from .base import BaseTest
@@ -119,6 +119,42 @@ class TestTabBar(BaseTest):
         tb.window_drop_insert_before = 0
         tb.draw_drop_insert_marker()
         self.ae(str(tb.screen.line(0))[-1], '┃')
+
+    def test_close_button_hit_testing(self) -> None:
+        self.set_options({
+            'tab_bar_style': 'separator',
+            'tab_title_template': '{title}',
+        })
+        central = region(0, 20, 300, 120)
+        tab_bar = region(0, 0, 300, 20)
+
+        with (
+            patch('kitty.tab_bar.cell_size_for_window', return_value=(10, 20)),
+            patch('kitty.tab_bar.viewport_for_window', return_value=(central, tab_bar, 300, 120, 10, 20)),
+            patch('kitty.tab_bar.set_tab_bar_render_data'),
+            patch('kitty.tab_bar.get_boss', return_value=DummyBoss()),
+        ):
+            tb = TabBar(1)
+            tb.layout()
+            tb.update((
+                TabBarData(title='first tab', tab_id=1, is_active=True),
+                TabBarData(title='second tab', tab_id=2),
+            ))
+
+        self.assertGreaterEqual(len(tb.tab_extents), 2)
+        first = tb.tab_extents[0]
+        self.assertIsNotNone(first.close_button)
+        assert first.close_button is not None
+        y = tb.window_geometry.top + 5
+        close_x = tb.window_geometry.left + first.close_button.start * tb.cell_width
+        tab_x = tb.window_geometry.left + first.x.start * tb.cell_width
+        self.ae(tb.tab_id_at(close_x, y), 1)
+        self.ae(tb.close_button_tab_id_at(close_x, y), 1)
+        self.ae(tb.close_button_tab_id_at(tab_x, y), 0)
+        self.ae(tb.close_button_tab_id_at(close_x, tb.window_geometry.bottom + 5), 0)
+        # the button sits inside the tab, right after its title, before any separator
+        self.assertIn('first tab ✘', str(tb.screen.line(0)))
+        self.ae(tb.screen.line(0)[first.close_button.end], '✘')
 
     def test_vertical_tab_bar_hit_testing(self) -> None:
         self.set_options(
@@ -629,7 +665,8 @@ class TestTabBar(BaseTest):
             ('powerline', 80, ['1'] * 5 + [long_title] * 3),
             ('slant', 126, ['1'] * 9 + [long_title] * 4),
         ):
-            text = line(titles, columns, tab_bar_style=style)
+            # leave room for the close button each tab has
+            text = line(titles, columns + CLOSE_BUTTON_WIDTH * len(titles), tab_bar_style=style)
             self.ae(text.count(long_title), titles.count(long_title), (style, text))
             self.assertNotIn('…', text)
 

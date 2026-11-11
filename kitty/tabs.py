@@ -21,6 +21,7 @@ from .constants import appname, is_wayland
 from .fast_data_types import (
     GLFW_MOUSE_BUTTON_LEFT,
     GLFW_MOUSE_BUTTON_MIDDLE,
+    GLFW_MOUSE_BUTTON_RIGHT,
     GLFW_PRESS,
     GLFW_RELEASE,
     WINDOW_FULLSCREEN,
@@ -1872,6 +1873,11 @@ class TabManager:  # {{{
         self.mark_tab_bar_dirty()
         return t
 
+    def new_tab_after_current_with_cwd(self) -> Tab:
+        t = self.active_tab
+        w = t.active_window_for_cwd if t is not None else None
+        return self.new_tab(cwd_from=CwdRequest(w) if w is not None else None, location='after')
+
     @update_tab_bar_visibility
     def remove(self, removed_tab: Tab) -> None:
         active_tab_before_removal = self.active_tab
@@ -2071,15 +2077,22 @@ class TabManager:  # {{{
                     self.recent_tab_bar_mouse_events.clear()
             return
 
+        close_button_tab_id = self.tab_bar.close_button_tab_id_at(int(x), int(y))
         tab_id_at_pointer = self.tab_bar.tab_id_at(int(x), int(y))
         self.recent_tab_bar_mouse_events.add(button, modifiers, action, x, y, tab_id_at_pointer)
         drag_started = get_tab_being_dragged()[1]
         is_left_release = button == GLFW_MOUSE_BUTTON_LEFT and action == GLFW_RELEASE
+        if close_button_tab_id > 0 and is_left_release and not drag_started:
+            if tab := self.tab_for_id(close_button_tab_id):
+                get_boss().close_tab(tab)
+                self.recent_tab_bar_mouse_events.clear()
+                set_tab_being_dragged()
+            return
         if tab_id_at_pointer < 0:  # synthetic tab (e.g. "+" new-tab button)
             if is_left_release and not drag_started:
                 set_tab_being_dragged()  # clear potential drag from a press on a tab
             if self.recent_tab_bar_mouse_events.click_count(GLFW_MOUSE_BUTTON_LEFT) == 1:
-                self.new_tab()
+                self.new_tab_after_current_with_cwd()
                 self.recent_tab_bar_mouse_events.clear()
             return
         if drag_started:
@@ -2089,7 +2102,12 @@ class TabManager:  # {{{
             if is_left_release:
                 set_tab_being_dragged()  # clear potential drag from a press on a tab
             if self.recent_tab_bar_mouse_events.click_count(GLFW_MOUSE_BUTTON_LEFT) == 2:
-                self.new_tab()
+                self.new_tab_after_current_with_cwd()
+                self.recent_tab_bar_mouse_events.clear()
+            return
+        if button == GLFW_MOUSE_BUTTON_RIGHT:
+            if action == GLFW_RELEASE:
+                self.show_tab_context_menu(tab)
                 self.recent_tab_bar_mouse_events.clear()
             return
         if button == GLFW_MOUSE_BUTTON_LEFT:
@@ -2113,6 +2131,37 @@ class TabManager:  # {{{
                 get_boss().close_tab(tab)
                 self.recent_tab_bar_mouse_events.clear()
             return
+
+    def show_tab_context_menu(self, tab: Tab) -> None:
+        boss = get_boss()
+        if self.active_tab is not tab:
+            self.set_active_tab(tab)
+        entries: tuple[tuple[str, str], ...] = (
+            ('new_tab_after', _('New Tab')),
+            ('rename', _('Rename Tab')),
+            ('close', _('Close Tab')),
+            ('close_others', _('Close Other Tabs')),
+            ('detach', _('Detach Tab')),
+        )
+
+        def chosen(ans: str | None) -> None:
+            target = self.tab_for_id(tab.id)
+            if target is None or ans is None:
+                return
+            if ans == 'new_tab_after':
+                self.new_tab_after_current_with_cwd()
+            elif ans == 'rename':
+                boss.set_tab_title()
+            elif ans == 'close':
+                boss.close_tab(target)
+            elif ans == 'close_others':
+                for other in tuple(self):
+                    if other is not target:
+                        boss.close_tab(other)
+            elif ans == 'detach':
+                boss._move_tab_to(target)
+
+        boss.choose_entry(_('Tab actions'), entries, chosen)
 
     def handle_window_title_bar_mouse(self, window_id: int, x: float, y: float, button: int, modifiers: int, action: int) -> None:
         boss = get_boss()

@@ -36,6 +36,7 @@ from .clipboard import (
     Clipboard,
     ClipboardType,
     get_clipboard_string,
+    get_clipboard_string_or_media_data_url,
     get_primary_selection,
     set_clipboard_string,
     set_primary_selection,
@@ -3155,7 +3156,7 @@ class Boss:
         if w is not None:
             if w.send_paste_event():
                 return
-            text = get_clipboard_string()
+            text = get_clipboard_string_or_media_data_url()
             if text:
                 w.paste_with_actions(text)
 
@@ -3499,16 +3500,16 @@ class Boss:
             return tm.new_tab(special_window=special_window, cwd_from=cwd_from, as_neighbor=as_neighbor)
         return None
 
-    def _create_tab(self, args: list[str], cwd_from: CwdRequest | None = None) -> None:
-        as_neighbor = False
+    def _create_tab(self, args: list[str], cwd_from: CwdRequest | None = None, as_neighbor: bool = False) -> None:
         if args and args[0].startswith('!'):
             as_neighbor = 'neighbor' in args[0][1:].split(',')
             args = args[1:]
         self._new_tab(args, as_neighbor=as_neighbor, cwd_from=cwd_from)
 
-    @ac('tab', 'Create a new tab')
+    @ac('tab', 'Create a new tab next to the active tab, with the working directory of the active window')
     def new_tab(self, *args: str) -> None:
-        self._create_tab(list(args))
+        cwd_from = CwdRequest(self.window_for_dispatch or self.active_window_for_cwd)
+        self._create_tab(list(args), cwd_from=cwd_from, as_neighbor=True)
 
     @ac(
         'tab',

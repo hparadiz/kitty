@@ -498,6 +498,28 @@ def truncate_line(line: str, width: int) -> str:
     return out + '…'
 
 
+class DrawnTitle(NamedTuple):
+    "The cells of the first line of the most recently drawn title, used to place the tab close button"
+    start: int
+    cells: tuple[str, ...]
+
+
+last_drawn_title: DrawnTitle | None = None
+
+
+def title_end(screen: Screen, title: DrawnTitle | None, before: int, end: int) -> int:
+    """The column after the last cell of title still showing on the tab bar, ignoring padding and
+    separators drawn over its tail, or end if the title was not drawn by draw_title()"""
+    if title is None or title.start < before:
+        return end
+    line = screen.line(0)
+    for x in range(min(end, title.start + len(title.cells)) - 1, title.start - 1, -1):
+        q = line[x]
+        if q != ' ' and (q == '…' or q == title.cells[x - title.start]):
+            return x + 1
+    return end
+
+
 def draw_title(draw_data: DrawData, screen: Screen, tab: TabBarData, index: int, max_title_length: int = 0) -> None:
     title = apply_title_template(draw_data, tab, index, max_title_length)
     if draw_data.max_tab_title_lines > 1 and draw_data.wrap_width:
@@ -520,6 +542,10 @@ def draw_title(draw_data: DrawData, screen: Screen, tab: TabBarData, index: int,
         if screen.cursor.x > x_limit:
             screen.cursor.x = x_limit - 1
             screen.draw('…')
+    global last_drawn_title
+    if screen.cursor.y == 0 and screen.cursor.x > before_draw:
+        line = screen.line(0)
+        last_drawn_title = DrawnTitle(before_draw, tuple(line[x] for x in range(before_draw, screen.cursor.x)))
 
 
 DrawTabFunc = Callable[[DrawData, Screen, TabBarData, int, int, int, bool, ExtraData], int]
@@ -776,6 +802,10 @@ def load_custom_draw_title(data: dict[str, Any]) -> CustomDrawTitleFunc:
     return CustomDrawTitleFunc(data, m.get('draw_title'))
 
 
+CLOSE_BUTTON_WIDTH = 2  # a space and the ✘
+CLOSE_BUTTON_MIN_TAB_LENGTH = CLOSE_BUTTON_WIDTH + 1  # leave at least one cell for the tab itself
+
+
 class CellRange(NamedTuple):
     start: int
     end: int
@@ -785,16 +815,21 @@ class TabExtent(NamedTuple):
     tab_id: int
     x: CellRange
     y: CellRange = CellRange(0, 0)
+    close_button: CellRange | None = None  # columns of the close button, on the rows in y
 
     def shifted(self, x: int = 0, y: int = 0) -> 'TabExtent':
         return TabExtent(
             self.tab_id,
             CellRange(self.x.start + x, self.x.end + x),
             CellRange(self.y.start + y, self.y.end + y),
+            None if self.close_button is None else CellRange(self.close_button.start + x, self.close_button.end + x),
         )
 
     def contains(self, x: int, y: int) -> bool:
         return self.x.start <= x <= self.x.end and self.y.start <= y <= self.y.end
+
+    def close_button_contains(self, x: int, y: int) -> bool:
+        return self.close_button is not None and self.close_button.start <= x <= self.close_button.end and self.y.start <= y <= self.y.end
 
 
 class WindowDropTarget(NamedTuple):
@@ -1072,9 +1107,30 @@ class TabBar:
             s.cursor.fg = as_rgb(self.draw_data.tab_fg(tab))
             s.cursor.bold, s.cursor.italic = self.active_font_style if tab.is_active else self.inactive_font_style
             before = s.cursor.x
+            # Reserve room for the close button out of the tab's length, so that
+            # the layout accounts for it and it never covers the title.
+            has_close_button = tab.tab_id >= 0 and max_tab_length >= CLOSE_BUTTON_MIN_TAB_LENGTH
+            if has_close_button:
+                max_tab_length -= CLOSE_BUTTON_WIDTH
+            global last_drawn_title
+            last_drawn_title = None
             end = self.draw_func(self.draw_data, s, tab, before, max_tab_length, i + 1, tab is last_tab, ed)
+            close_button = None
+            if has_close_button and end < s.columns:
+                # Insert the button right after the title, inside the tab, shifting the
+                # padding and separators the draw function drew after it to the right.
+                after = s.cursor.x
+                bx = title_end(s, last_drawn_title, before, end)
+                s.cursor.x = bx
+                s.insert_characters(CLOSE_BUTTON_WIDTH)
+                s.cursor.bg = as_rgb(self.draw_data.tab_bg(tab))
+                s.cursor.fg = as_rgb(self.draw_data.tab_fg(tab))
+                s.draw(' ✘')
+                close_button = CellRange(bx, bx + CLOSE_BUTTON_WIDTH - 1)
+                end += CLOSE_BUTTON_WIDTH
+                s.cursor.x = min(s.columns, after + CLOSE_BUTTON_WIDTH)
             s.cursor.bg = s.cursor.fg = 0
-            cell_ranges.append(TabExtent(tab_id=tab.tab_id, x=CellRange(before, end)))
+            cell_ranges.append(TabExtent(tab_id=tab.tab_id, x=CellRange(before, end), close_button=close_button))
             if not ed.for_layout and tab is not last_tab and s.cursor.x > s.columns - max_tab_lengths[i + 1]:
                 # Stop if there is no space for next tab
                 s.cursor.x = s.columns - 2
@@ -1309,6 +1365,18 @@ class TabBar:
             y = (y - g.top) // self.cell_height
             for te in self.tab_extents:
                 if te.contains(x, y):
+                    return te.tab_id
+        return 0
+
+    def close_button_tab_id_at(self, x: int, y: int) -> int:
+        if self.laid_out_once:
+            g = self.window_geometry
+            if not (g.left <= x < g.right and g.top <= y < g.bottom):
+                return 0
+            x = (x - g.left) // self.cell_width
+            y = (y - g.top) // self.cell_height
+            for te in self.tab_extents:
+                if te.close_button_contains(x, y):
                     return te.tab_id
         return 0
 
